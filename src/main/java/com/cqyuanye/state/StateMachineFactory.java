@@ -1,5 +1,6 @@
 package com.cqyuanye.state;
 
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -9,13 +10,24 @@ import java.util.Set;
  */
 public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE extends Enum<EVENTTYPE>,EVENT> {
 
-    private Map<STATE,Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>>> stateTransitionTable = new HashMap<>();
+    private Map<STATE,Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>>> stateTransitionTable;
+           // new EnumMap<STATE,Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>>>(STATE.class);
 
-    private final STATE initState;
+    TransitionNode<OPERAND,STATE,EVENTTYPE,EVENT> transitionNode;
+
+    private  STATE defaultState;
 
     public StateMachineFactory(STATE initState){
-        this.initState = initState;
-        stateTransitionTable.put(initState,null);
+        this.defaultState = initState;
+        this.transitionNode = null;
+        this.stateTransitionTable = null;
+    }
+
+    private StateMachineFactory(ApplicableMultiOrSingleTransition apt,
+                                StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> that){
+        this.defaultState = that.defaultState;
+        transitionNode = new TransitionNode<>(that.transitionNode,apt);
+        this.stateTransitionTable = null;
     }
 
     private interface Transition<OPERAND,STATE extends Enum<STATE>,EVENT>{
@@ -60,6 +72,47 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
         }
     }
 
+    private interface ApplicableTransition<OPERAND,STATE extends Enum<STATE>,EVENTTYPE extends Enum<EVENTTYPE>,EVENT>{
+        void apply(StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> factory);
+    }
+
+    private class ApplicableMultiOrSingleTransition
+            implements ApplicableTransition<OPERAND,STATE,EVENTTYPE,EVENT>{
+
+        private final Transition<OPERAND,STATE,EVENT> transition;
+        private final EVENTTYPE eventtype;
+        private final STATE preState;
+
+        public ApplicableMultiOrSingleTransition(Transition<OPERAND,STATE,EVENT> transition,
+                                                 EVENTTYPE eventtype,
+                                                 STATE preState){
+            this.transition = transition;
+            this.eventtype = eventtype;
+            this.preState = preState;
+        }
+
+        @Override
+        public void apply(StateMachineFactory<OPERAND, STATE, EVENTTYPE, EVENT> factory) {
+            Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>> map = factory.stateTransitionTable.get(preState);
+            if (map == null){
+                map = new HashMap<>();
+                factory.stateTransitionTable.put(preState,map);
+            }
+            map.put(eventtype,transition);
+        }
+    }
+
+    private class TransitionNode<OPERAND,STATE extends Enum<STATE>,EVENTTYPE extends Enum<EVENTTYPE>,EVENT>{
+        TransitionNode<OPERAND,STATE ,EVENTTYPE,EVENT> next;
+        ApplicableTransition<OPERAND,STATE,EVENTTYPE,EVENT> transition;
+
+        public TransitionNode(TransitionNode<OPERAND,STATE ,EVENTTYPE,EVENT> next,
+                              ApplicableTransition<OPERAND,STATE,EVENTTYPE,EVENT> transition){
+            this.next = next;
+            this.transition = transition;
+        }
+    }
+
     private class InternalStateMachine implements StateMachine<STATE,EVENTTYPE,EVENT>{
 
         private STATE currentState;
@@ -94,26 +147,20 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
         throw new InvalidStateException();
     }
 
-    public StateMachineFactory addSingleTransition(STATE preState,STATE postState,EVENTTYPE eventtype,SingleArcTransition<OPERAND,EVENT> hook){
+    public StateMachineFactory addSingleTransition(STATE preState,STATE postState,EVENTTYPE eventtype,
+                                                   SingleArcTransition<OPERAND,EVENT> hook){
+
         SingleArcInternalTransition transition = new SingleArcInternalTransition(postState,hook);
-        Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>> transitionMap = stateTransitionTable.get(preState);
-        if (transitionMap == null){
-            transitionMap = new HashMap<>();
-            stateTransitionTable.put(preState,transitionMap);
-        }
-        transitionMap.put(eventtype,transition);
-        return this;
+        ApplicableMultiOrSingleTransition apt = new ApplicableMultiOrSingleTransition(transition,eventtype,preState);
+
+        return new StateMachineFactory(apt,this);
     }
 
     public StateMachineFactory addMultiTransition(STATE preState,Set<STATE> invalidState,EVENTTYPE eventtype,MultiArcTransition<OPERAND,EVENT,STATE> hook){
         MultiArcInternalTransition transition = new MultiArcInternalTransition(invalidState,hook);
-        Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>> transitionMap = stateTransitionTable.get(preState);
-        if (transitionMap == null){
-            transitionMap = new HashMap<>();
-            stateTransitionTable.put(preState,transitionMap);
-        }
-        transitionMap.put(eventtype,transition);
-        return this;
+        ApplicableMultiOrSingleTransition apt = new ApplicableMultiOrSingleTransition(transition,eventtype,preState);
+
+        return new StateMachineFactory(apt,this);
     }
 
     public StateMachine<STATE,EVENTTYPE,EVENT> getStateMachine(OPERAND operand,STATE initState){
