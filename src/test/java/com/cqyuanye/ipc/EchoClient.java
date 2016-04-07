@@ -1,7 +1,5 @@
 package com.cqyuanye.ipc;
 
-import com.cqyuanye.ipc.RPC;
-
 import java.net.InetSocketAddress;
 
 /**

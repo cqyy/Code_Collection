@@ -9,11 +9,10 @@ import java.util.List;
  */
 public class Test {
     public static void main(String[] args) throws InvalidStateException {
-        StateMachineFactory<WorkFlow,WorkflowState,WorkflowCommand,WorkflowEvent> factory =
-                new StateMachineFactory<>(WorkflowState.NOT_START);
 
-        StateMachine<WorkflowState,WorkflowCommand,WorkflowEvent> stateMachine =
-                factory.addSingleTransition(WorkflowState.NOT_START, WorkflowState.RUNNING,
+        StateMachineFactory<WorkFlow,WorkflowState,WorkflowCommand,WorkflowEvent> factory =
+                new StateMachineFactory<WorkFlow,WorkflowState,WorkflowCommand,WorkflowEvent>(WorkflowState.NOT_START)
+                        .addSingleTransition(WorkflowState.NOT_START, WorkflowState.RUNNING,
                         WorkflowCommand.START_WORKFLOW, (workFlow, workflowEvent) ->
                                 System.out.println(workFlow + " -- " + workflowEvent))
                         .addSingleTransition(WorkflowState.RUNNING, WorkflowState.WAITING,
@@ -39,13 +38,16 @@ public class Test {
                         .addSingleTransition(WorkflowState.STOPPING, WorkflowState.STOPPED,
                                 WorkflowCommand.STOPPING_COMPLETED, (workFlow, workflowEvent) ->
                                         System.out.println(workFlow + " -- " + workflowEvent))
-                        .getStateMachine(new WorkFlow("111"), WorkflowState.NOT_START);
+                        .installTopology();
 
+        StateMachine<WorkflowState,WorkflowCommand,WorkflowEvent> stateMachine =
+                factory.make(new WorkFlow("11"));
         List<WorkflowCommand> commandList = new ArrayList<>();
         commandList.add(WorkflowCommand.START_WORKFLOW);
         commandList.add(WorkflowCommand.RUNNING_COMPLETED);
 
         for (WorkflowCommand command : commandList){
+            System.out.println(stateMachine.getCurrentState());
             stateMachine.doTransition(command,new WorkflowEvent());
         }
         System.out.println(stateMachine.getCurrentState());

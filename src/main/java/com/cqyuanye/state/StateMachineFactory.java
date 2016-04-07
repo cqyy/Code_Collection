@@ -3,7 +3,7 @@ package com.cqyuanye.state;
 import java.util.*;
 
 /**
- * Created by yuanye on 2016/4/4.
+ * Created by YuanYe on 2016/4/4.
  *
  * A simple implementation of an immutable state machine factory.
  */
