@@ -1,12 +1,11 @@
 package com.cqyuanye.state;
 
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Created by yuanye on 2016/4/4.
+ *
+ * A simple implementation of an immutable state machine factory.
  */
 public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE extends Enum<EVENTTYPE>,EVENT> {
 
@@ -16,11 +15,13 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
     TransitionNode<OPERAND,STATE,EVENTTYPE,EVENT> transitionNode;
 
     private  STATE defaultState;
+    private boolean optimized;
 
     public StateMachineFactory(STATE initState){
         this.defaultState = initState;
         this.transitionNode = null;
         this.stateTransitionTable = null;
+        this.optimized = false;
     }
 
     private StateMachineFactory(ApplicableMultiOrSingleTransition apt,
@@ -28,6 +29,16 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
         this.defaultState = that.defaultState;
         transitionNode = new TransitionNode<>(that.transitionNode,apt);
         this.stateTransitionTable = null;
+    }
+
+    private StateMachineFactory(StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> that,boolean optimized){
+        this.defaultState = that.defaultState;
+        this.transitionNode = that.transitionNode;
+        if (optimized){
+            makeTransitionTable();
+        }else {
+            stateTransitionTable = null;
+        }
     }
 
     private interface Transition<OPERAND,STATE extends Enum<STATE>,EVENT>{
@@ -118,8 +129,8 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
         private STATE currentState;
         private final OPERAND operand;
 
-        public InternalStateMachine(OPERAND operand,STATE state){
-            this.currentState = state;
+        public InternalStateMachine(OPERAND operand){
+            this.currentState = defaultState;
             this.operand = operand;
         }
 
@@ -147,23 +158,48 @@ public class StateMachineFactory<OPERAND,STATE extends Enum<STATE>,EVENTTYPE ext
         throw new InvalidStateException();
     }
 
-    public StateMachineFactory addSingleTransition(STATE preState,STATE postState,EVENTTYPE eventtype,
+    private void makeTransitionTable(){
+        Stack<TransitionNode<OPERAND,STATE,EVENTTYPE,EVENT>> transitionNodeStack = new Stack<>();
+        TransitionNode<OPERAND,STATE,EVENTTYPE,EVENT> node;
+        for (node = transitionNode; node != null;node = node.next){
+            transitionNodeStack.push(node);
+        }
+
+        Map<STATE,Map<EVENTTYPE,Transition<OPERAND,STATE,EVENT>>> protype = new HashMap<>();
+        protype.put(defaultState,null);
+
+        stateTransitionTable = new EnumMap<>(protype);
+
+        while (!transitionNodeStack.isEmpty()){
+            transitionNodeStack.pop().transition.apply(this);
+        }
+    }
+
+    public StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> installTopology(){
+        return new StateMachineFactory<>(this,true);
+    }
+
+    public StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> addSingleTransition(STATE preState,STATE postState,EVENTTYPE eventtype,
                                                    SingleArcTransition<OPERAND,EVENT> hook){
 
         SingleArcInternalTransition transition = new SingleArcInternalTransition(postState,hook);
         ApplicableMultiOrSingleTransition apt = new ApplicableMultiOrSingleTransition(transition,eventtype,preState);
 
-        return new StateMachineFactory(apt,this);
+        return new StateMachineFactory<>(apt,this);
     }
 
-    public StateMachineFactory addMultiTransition(STATE preState,Set<STATE> invalidState,EVENTTYPE eventtype,MultiArcTransition<OPERAND,EVENT,STATE> hook){
+    public StateMachineFactory<OPERAND,STATE,EVENTTYPE,EVENT> addMultiTransition(STATE preState,Set<STATE> invalidState,EVENTTYPE eventtype,MultiArcTransition<OPERAND,EVENT,STATE> hook){
         MultiArcInternalTransition transition = new MultiArcInternalTransition(invalidState,hook);
         ApplicableMultiOrSingleTransition apt = new ApplicableMultiOrSingleTransition(transition,eventtype,preState);
 
-        return new StateMachineFactory(apt,this);
+        return new StateMachineFactory<>(apt,this);
     }
 
-    public StateMachine<STATE,EVENTTYPE,EVENT> getStateMachine(OPERAND operand,STATE initState){
-        return new InternalStateMachine(operand,initState);
+    public StateMachine<STATE,EVENTTYPE,EVENT> make(OPERAND operand){
+        if (optimized == false){
+            installTopology();
+            optimized = true;
+        }
+        return new InternalStateMachine(operand);
     }
 }
